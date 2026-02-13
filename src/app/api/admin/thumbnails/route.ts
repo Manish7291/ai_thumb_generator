@@ -77,7 +77,7 @@ export async function DELETE(request: NextRequest) {
 
     // Get thumbnails to find their owners before deleting
     const thumbnails = await Thumbnail.find({ _id: { $in: ids } }).lean();
-    const userIds = [...new Set(thumbnails.map((t) => t.userId.toString()))];
+    const userIds = Array.from(new Set(thumbnails.map((t) => t.userId.toString())));
 
     // Delete the thumbnails
     const result = await Thumbnail.deleteMany({ _id: { $in: ids } });
