@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -66,6 +65,8 @@ export default function AdminDashboardPage() {
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [thumbnailsLoading, setThumbnailsLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [selectedThumbnails, setSelectedThumbnails] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -135,6 +136,53 @@ export default function AdminDashboardPage() {
       })
       .catch(() => {})
       .finally(() => setTogglingId(null));
+  }
+
+  function toggleSelectThumbnail(id: string) {
+    setSelectedThumbnails((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedThumbnails.size === thumbnails.length) {
+      setSelectedThumbnails(new Set());
+    } else {
+      setSelectedThumbnails(new Set(thumbnails.map((t) => t.id)));
+    }
+  }
+
+  async function handleDeleteThumbnails(ids: string[]) {
+    if (!confirm(`Delete ${ids.length} thumbnail(s)? This cannot be undone.`)) return;
+    setDeletingIds(new Set(ids));
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const res = await fetch("/api/admin/thumbnails", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Delete failed");
+      setThumbnails((prev) => prev.filter((t) => !ids.includes(t.id)));
+      setSelectedThumbnails((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      // Refresh stats
+      api.get<Stats>("/api/admin/stats").then(setStats).catch(() => {});
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingIds(new Set());
+    }
   }
 
   function handleLogout() {
@@ -344,11 +392,48 @@ export default function AdminDashboardPage() {
                   <div className="p-12 text-center text-slate-500 text-sm">No thumbnails yet.</div>
                 ) : (
                   <div className="p-4">
+                    {/* Bulk actions bar */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={toggleSelectAll}
+                          className="flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-colors"
+                        >
+                          <span className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+                            selectedThumbnails.size === thumbnails.length
+                              ? "bg-red-500 border-red-500"
+                              : "border-white/20 hover:border-white/40"
+                          }`}>
+                            {selectedThumbnails.size === thumbnails.length && (
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                          </span>
+                          {selectedThumbnails.size > 0
+                            ? `${selectedThumbnails.size} selected`
+                            : "Select all"}
+                        </button>
+                      </div>
+                      {selectedThumbnails.size > 0 && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleDeleteThumbnails(Array.from(selectedThumbnails))}
+                          disabled={deletingIds.size > 0}
+                          className="h-8 px-3 text-xs bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 rounded-lg"
+                        >
+                          {deletingIds.size > 0 ? "Deleting..." : `Delete ${selectedThumbnails.size} selected`}
+                        </Button>
+                      )}
+                    </div>
+
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                       {thumbnails.map((t) => (
                         <div
                           key={t.id}
-                          className="group rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden hover:border-white/[0.1] transition-all duration-300"
+                          className={`group rounded-xl border overflow-hidden transition-all duration-300 ${
+                            selectedThumbnails.has(t.id)
+                              ? "border-red-500/40 bg-red-500/[0.04]"
+                              : "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.1]"
+                          }`}
                         >
                           <div className="relative overflow-hidden">
                             <img
@@ -356,13 +441,41 @@ export default function AdminDashboardPage() {
                               alt={t.originalPrompt}
                               className="h-32 w-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
+                            {/* Select checkbox overlay */}
+                            <button
+                              onClick={() => toggleSelectThumbnail(t.id)}
+                              className={`absolute top-2 left-2 h-5 w-5 rounded border flex items-center justify-center transition-all ${
+                                selectedThumbnails.has(t.id)
+                                  ? "bg-red-500 border-red-500"
+                                  : "bg-black/50 border-white/30 opacity-0 group-hover:opacity-100"
+                              }`}
+                            >
+                              {selectedThumbnails.has(t.id) && (
+                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                              )}
+                            </button>
                           </div>
                           <div className="p-3">
                             <p className="text-[10px] text-slate-600 mb-1">{t.userEmail}</p>
                             <p className="text-sm text-white truncate" title={t.originalPrompt}>
                               {t.originalPrompt}
                             </p>
-                            <p className="mt-1 text-[10px] text-slate-600">{t.size} • {t.layout}</p>
+                            <div className="mt-2 flex items-center justify-between">
+                              <p className="text-[10px] text-slate-600">{t.size} • {t.layout}</p>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteThumbnails([t.id])}
+                                disabled={deletingIds.has(t.id)}
+                                className="h-6 w-6 p-0 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg"
+                              >
+                                {deletingIds.has(t.id) ? (
+                                  <span className="text-[10px]">...</span>
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       ))}
