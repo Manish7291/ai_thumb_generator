@@ -159,17 +159,7 @@ export default function AdminDashboardPage() {
     if (!confirm(`Delete ${ids.length} thumbnail(s)? This cannot be undone.`)) return;
     setDeletingIds(new Set(ids));
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const res = await fetch("/api/admin/thumbnails", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ ids }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Delete failed");
+      await api.del("/api/admin/thumbnails", { ids });
       setThumbnails((prev) => prev.filter((t) => !ids.includes(t.id)));
       setSelectedThumbnails((prev) => {
         const next = new Set(prev);
